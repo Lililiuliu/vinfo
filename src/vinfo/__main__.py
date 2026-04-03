@@ -5,6 +5,7 @@ from rich.text import Text
 from rich.table import Table
 
 import vinfo.providers  # noqa: F401
+import vinfo
 from vinfo.constants import STATUS_LABELS
 from vinfo.core.registry import get_all_providers
 from vinfo.core.runner import CommandRunner
@@ -69,6 +70,7 @@ def dashboard():
         "   \\_/  |___|_| |_|_|  \\___/ \n"
     )
     console.print(Text(logo, style="cyan bold", justify="left"))
+    console.print(f"[dim]v{vinfo.__version__}[/dim]")
     console.print()
     console.print(table)
     console.print("\n[dim]查看详情: vinfo python | vinfo node | vinfo docker | vinfo git[/dim]")
