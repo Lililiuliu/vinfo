@@ -1,0 +1,78 @@
+/* vinfo dark theme (Catppuccin-inspired) */
+
+Screen {
+    background: #1e1e2e;
+    color: #cdd6f4;
+}
+
+#header {
+    dock: top;
+    height: 3;
+    background: #181825;
+    color: #cdd6f4;
+    padding: 0 2;
+}
+
+#footer {
+    dock: bottom;
+    height: 3;
+    background: #181825;
+    color: #6c7086;
+    padding: 0 2;
+}
+
+#loading-text {
+    height: 1;
+    color: #6c7086;
+    padding: 0 2;
+}
+
+DataTable {
+    background: #1e1e2e;
+}
+
+DataTable > .datatable--cursor {
+    background: #313244;
+    color: #cdd6f4;
+}
+
+DataTable > .datatable--cursor-col {
+    background: #313244;
+}
+
+DataTable > .datatable--header {
+    background: #181825;
+    color: #6c7086;
+}
+
+.status-ok {
+    color: #a6e3a1;
+}
+
+.status-warn {
+    color: #f9e2af;
+}
+
+.status-error {
+    color: #f38ba8;
+}
+
+.status-missing {
+    color: #6c7086;
+}
+
+.status-unknown {
+    color: #cba6f7;
+}
+
+.info-row {
+    padding: 0 2;
+}
+
+.action-cmd {
+    color: #6c7086;
+}
+
+DetailScreen {
+    background: #1e1e2e;
+}

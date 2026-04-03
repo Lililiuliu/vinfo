@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vinfo"
+version = "0.1.0"
+description = "一站式开发环境查询与管理 CLI 工具"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "rich>=13.0",
+    "typer>=0.12",
+]
+
+[project.scripts]
+vinfo = "vinfo.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
