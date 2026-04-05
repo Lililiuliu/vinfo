@@ -1,6 +1,6 @@
 import Foundation
 
-final class PythonProvider: EnvironmentProvider {
+final class PythonChecker: EnvironmentChecker {
     static let name = "python"
     static let displayName = "Python"
     static let icon = "snake"

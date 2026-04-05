@@ -12,10 +12,10 @@ struct SettingsView: View {
                     Label("General", systemImage: "gear")
                 }
 
-            ProviderSettingsView()
+            CheckerSettingsView()
                 .environmentObject(configService)
                 .tabItem {
-                    Label("Providers", systemImage: "list.bullet.rectangle")
+                    Label("Checkers", systemImage: "list.bullet.rectangle")
                 }
         }
         .frame(width: 480, height: 320)
@@ -57,12 +57,12 @@ struct GeneralSettingsView: View {
     }
 }
 
-struct ProviderSettingsView: View {
+struct CheckerSettingsView: View {
     @EnvironmentObject var configService: ConfigService
 
     var body: some View {
         Form {
-            Section("Enabled Providers") {
+            Section("Enabled Checkers") {
                 Toggle("Python", isOn: $configService.config.showPython)
                 Toggle("Node.js", isOn: $configService.config.showNode)
                 Toggle("Docker", isOn: $configService.config.showDocker)

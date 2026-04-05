@@ -1,6 +1,6 @@
 import Foundation
 
-final class NodeProvider: EnvironmentProvider {
+final class NodeChecker: EnvironmentChecker {
     static let name = "node"
     static let displayName = "Node.js"
     static let icon = "nodejs"

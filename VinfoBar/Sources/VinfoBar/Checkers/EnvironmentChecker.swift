@@ -7,7 +7,7 @@ struct ActionDefinition: Identifiable {
     let isDangerous: Bool
 }
 
-protocol EnvironmentProvider: AnyObject {
+protocol EnvironmentChecker: AnyObject {
     static var name: String { get }
     static var displayName: String { get }
     static var icon: String { get }
@@ -26,7 +26,7 @@ protocol EnvironmentProvider: AnyObject {
     func quickActions() -> [ActionDefinition]
 }
 
-extension EnvironmentProvider {
+extension EnvironmentChecker {
     static var priority: Int { 100 }
     func quickActions() -> [ActionDefinition] { [] }
 }

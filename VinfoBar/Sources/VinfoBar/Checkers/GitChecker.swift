@@ -1,6 +1,6 @@
 import Foundation
 
-final class GitProvider: EnvironmentProvider {
+final class GitChecker: EnvironmentChecker {
     static let name = "git"
     static let displayName = "Git"
     static let icon = "git"

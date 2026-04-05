@@ -22,31 +22,31 @@ final class EnvironmentService: ObservableObject {
         isRefreshing = true
         errorMessage = nil
 
-        let providers = ProviderRegistry.shared.getAllProviders()
+        let checkers = CheckerRegistry.shared.getAllCheckers()
         var results: [any EnvironmentInfo] = []
 
         await withTaskGroup(of: (any EnvironmentInfo)?.self) { group in
-            for providerType in providers {
+            for checkerType in checkers {
                 // Filter by config
-                let name = providerType.name
-                if !shouldShowProvider(name: name) {
+                let name = checkerType.name
+                if !shouldShowChecker(name: name) {
                     continue
                 }
 
                 group.addTask {
-                    let provider = await self.createProvider(providerType)
-                    let detected = await provider.detect()
+                    let checker = await self.createChecker(checkerType)
+                    let detected = await checker.detect()
 
                     if !detected {
                         return BaseEnvironmentInfo(
-                            name: providerType.name,
-                            displayName: providerType.displayName,
+                            name: checkerType.name,
+                            displayName: checkerType.displayName,
                             status: .notFound
                         )
                     }
 
-                    var info = await provider.collect()
-                    let (status, errors) = await provider.healthCheck()
+                    var info = await checker.collect()
+                    let (status, errors) = await checker.healthCheck()
                     if status != .unknown {
                         info.status = status
                     }
@@ -64,8 +64,8 @@ final class EnvironmentService: ObservableObject {
 
         // Sort by priority
         environments = results.sorted { env1, env2 in
-            let p1 = ProviderRegistry.shared.getProvider(name: env1.name)?.priority ?? 100
-            let p2 = ProviderRegistry.shared.getProvider(name: env2.name)?.priority ?? 100
+            let p1 = CheckerRegistry.shared.getChecker(name: env1.name)?.priority ?? 100
+            let p2 = CheckerRegistry.shared.getChecker(name: env2.name)?.priority ?? 100
             return p1 < p2
         }
 
@@ -73,7 +73,7 @@ final class EnvironmentService: ObservableObject {
         lastRefresh = Date()
     }
 
-    private func shouldShowProvider(name: String) -> Bool {
+    private func shouldShowChecker(name: String) -> Bool {
         switch name {
         case "python": return configService.config.showPython
         case "node": return configService.config.showNode
@@ -83,19 +83,19 @@ final class EnvironmentService: ObservableObject {
         }
     }
 
-    private func createProvider(_ type: any EnvironmentProvider.Type) -> any EnvironmentProvider {
-        // Providers are classes, so we instantiate them
-        if type == PythonProvider.self {
-            return PythonProvider()
-        } else if type == NodeProvider.self {
-            return NodeProvider()
-        } else if type == DockerProvider.self {
-            return DockerProvider()
-        } else if type == GitProvider.self {
-            return GitProvider()
+    private func createChecker(_ type: any EnvironmentChecker.Type) -> any EnvironmentChecker {
+        // Checkers are classes, so we instantiate them
+        if type == PythonChecker.self {
+            return PythonChecker()
+        } else if type == NodeChecker.self {
+            return NodeChecker()
+        } else if type == DockerChecker.self {
+            return DockerChecker()
+        } else if type == GitChecker.self {
+            return GitChecker()
         }
         // Fallback
-        return PythonProvider()
+        return PythonChecker()
     }
 
     func setupAutoRefresh() {
@@ -110,7 +110,7 @@ final class EnvironmentService: ObservableObject {
         }
     }
 
-    func getProvider(for name: String) -> (any EnvironmentProvider.Type)? {
-        return ProviderRegistry.shared.getProvider(name: name)
+    func getChecker(for name: String) -> (any EnvironmentChecker.Type)? {
+        return CheckerRegistry.shared.getChecker(name: name)
     }
 }

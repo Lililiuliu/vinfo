@@ -1,6 +1,6 @@
 import Foundation
 
-final class DockerProvider: EnvironmentProvider {
+final class DockerChecker: EnvironmentChecker {
     static let name = "docker"
     static let displayName = "Docker"
     static let icon = "docker"
