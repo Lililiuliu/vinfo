@@ -26,3 +26,26 @@ htmlcov/
 # Misc
 *.log
 .DS_Store
+
+# Swift / Swift Package Manager
+.build/
+Packages/
+Package.resolved
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+xcuserdata/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift build artifacts
+VinfoBar/.build/
+VinfoBar/build/
+VinfoBar/.swiftpm/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
