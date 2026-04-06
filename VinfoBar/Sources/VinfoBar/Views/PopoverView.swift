@@ -2,6 +2,8 @@ import SwiftUI
 
 struct PopoverView: View {
     @EnvironmentObject var service: EnvironmentService
+    @State private var selectedEnvironment: (any EnvironmentInfo)?
+    @State private var showDetail = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,6 +15,7 @@ struct PopoverView: View {
                 HStack(spacing: 8) {
                     Button(action: { Task { await service.refresh() } }) {
                         Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12))
                             .rotationEffect(.degrees(service.isRefreshing ? 360 : 0))
                             .animation(
                                 service.isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
@@ -22,13 +25,20 @@ struct PopoverView: View {
                     .buttonStyle(.plain)
                     .disabled(service.isRefreshing)
 
-                    Button("Settings") {
-                        NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
+                    Button(action: { NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil) }) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { NSApp.terminate(nil) }) {
+                        Image(systemName: "power")
+                            .font(.system(size: 12))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
             Divider()
@@ -38,27 +48,15 @@ struct PopoverView: View {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if service.environments.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("No environments detected")
-                        .foregroundColor(.secondary)
-                    Button("Refresh") {
-                        Task { await service.refresh() }
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyStateView()
             } else {
-                TabView {
-                    ForEach(service.environments, id: \.name) { env in
-                        CheckerTabView(info: env)
-                            .tabItem {
-                                Label(env.displayName, systemImage: env.status.icon)
-                            }
+                OverviewView(
+                    environments: service.environments,
+                    onSelectEnvironment: { env in
+                        selectedEnvironment = env
+                        showDetail = true
                     }
-                }
-                .tabViewStyle(.automatic)
+                )
             }
 
             Divider()
@@ -67,335 +65,568 @@ struct PopoverView: View {
             HStack {
                 if service.lastRefresh != .distantPast {
                     Text("Updated: \(service.lastRefresh, style: .relative)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
+                Spacer()
+                Text("\(service.environments.count) environments")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 12)
             .padding(.vertical, 6)
         }
-        .frame(width: 420, height: 450)
+        .frame(width: 360, height: 420)
+        .sheet(isPresented: $showDetail) {
+            if let env = selectedEnvironment {
+                CheckerDetailView(info: env)
+                    .environmentObject(service)
+            }
+        }
     }
 }
 
-struct CheckerTabView: View {
-    let info: any EnvironmentInfo
-    @EnvironmentObject var service: EnvironmentService
+// MARK: - Empty State
+
+struct EmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 32))
+                .foregroundStyle(.tertiary)
+            Text("No environments detected")
+                .foregroundStyle(.secondary)
+            Button("Refresh") {
+                Task { await EnvironmentService.shared.refresh() }
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Overview (Dashboard)
+
+struct OverviewView: View {
+    let environments: [any EnvironmentInfo]
+    let onSelectEnvironment: (any EnvironmentInfo) -> Void
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Content based on type
-                if let pythonInfo = info as? PythonInfo {
-                    PythonCheckerContent(info: pythonInfo)
-                } else if let nodeInfo = info as? NodeInfo {
-                    NodeCheckerContent(info: nodeInfo)
-                } else if let dockerInfo = info as? DockerInfo {
-                    DockerCheckerContent(info: dockerInfo)
-                } else if let gitInfo = info as? GitInfo {
-                    GitCheckerContent(info: gitInfo)
-                } else {
-                    GeneralCheckerContent(info: info)
+            VStack(spacing: 0) {
+                ForEach(Array(environments.enumerated()), id: \.element.name) { index, env in
+                    EnvironmentRow(info: env) {
+                        onSelectEnvironment(env)
+                    }
+
+                    if index < environments.count - 1 {
+                        Divider()
+                            .padding(.leading, 36)
+                    }
                 }
             }
-            .padding()
         }
     }
 }
 
-// MARK: - Python Content (matches CLI: Overview + Virtual Environments + Actions)
+// MARK: - Environment Row
 
-struct PythonCheckerContent: View {
+struct EnvironmentRow: View {
+    let info: any EnvironmentInfo
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Status indicator
+                Circle()
+                    .fill(info.status.dotColor)
+                    .frame(width: 8, height: 8)
+
+                // Icon
+                Image(systemName: iconForEnvironment(info.name))
+                    .font(.system(size: 16))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20)
+
+                // Info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(info.displayName)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+
+                    Text(quickDetails)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                // Chevron
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.quaternary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var quickDetails: String {
+        switch info.name {
+        case "python":
+            let pInfo = info as? PythonInfo
+            var parts: [String] = []
+            if pInfo?.pyenvInstalled == true { parts.append("pyenv") }
+            if let venvs = pInfo?.virtualenvs, !venvs.isEmpty { parts.append("\(venvs.count) venvs") }
+            return parts.isEmpty ? "system" : parts.joined(separator: ", ")
+
+        case "node":
+            let nInfo = info as? NodeInfo
+            var parts: [String] = []
+            if nInfo?.nvmInstalled == true { parts.append("nvm") }
+            else if nInfo?.fnmInstalled == true { parts.append("fnm") }
+            else if nInfo?.voltaInstalled == true { parts.append("volta") }
+            if let npm = nInfo?.npmVersion { parts.append("npm \(npm)") }
+            return parts.isEmpty ? "system" : parts.joined(separator: ", ")
+
+        case "docker":
+            let dInfo = info as? DockerInfo
+            var parts: [String] = []
+            if dInfo?.daemonRunning == true { parts.append("running") }
+            if let containers = dInfo?.containers { parts.append("\(containers.count) containers") }
+            if let images = dInfo?.images { parts.append("\(images.count) images") }
+            return parts.isEmpty ? "stopped" : parts.joined(separator: ", ")
+
+        case "git":
+            let gInfo = info as? GitInfo
+            var parts: [String] = []
+            if gInfo?.ghInstalled == true {
+                parts.append("gh")
+                if gInfo?.ghAuthStatus == "logged_in" { parts.append("authed") }
+            }
+            if let repo = gInfo?.currentRepo {
+                parts.append("repo: \(URL(fileURLWithPath: repo).lastPathComponent)")
+            }
+            return parts.isEmpty ? "no repo" : parts.joined(separator: ", ")
+
+        default:
+            return info.version ?? "N/A"
+        }
+    }
+
+    private func iconForEnvironment(_ name: String) -> String {
+        switch name {
+        case "python": return "chevron.left.forwardslash.chevron.right"
+        case "node": return "square.fill"
+        case "docker": return "cube.box"
+        case "git": return "arrow.triangle.branch"
+        default: return "questionmark.circle"
+        }
+    }
+}
+
+// MARK: - Checker Detail View
+
+struct CheckerDetailView: View {
+    let info: any EnvironmentInfo
+    @EnvironmentObject var service: EnvironmentService
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack(spacing: 12) {
+                Button(action: { dismiss() }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .buttonStyle(.plain)
+
+                Image(systemName: iconForEnvironment(info.name))
+                    .font(.system(size: 18))
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(info.displayName)
+                        .font(.headline)
+                    if let version = info.version {
+                        Text("v\(version)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                Spacer()
+
+                Circle()
+                    .fill(info.status.dotColor)
+                    .frame(width: 10, height: 10)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider()
+
+            // Content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let pythonInfo = info as? PythonInfo {
+                        PythonDetailContent(info: pythonInfo)
+                    } else if let nodeInfo = info as? NodeInfo {
+                        NodeDetailContent(info: nodeInfo)
+                    } else if let dockerInfo = info as? DockerInfo {
+                        DockerDetailContent(info: dockerInfo)
+                    } else if let gitInfo = info as? GitInfo {
+                        GitDetailContent(info: gitInfo)
+                    } else {
+                        GeneralDetailContent(info: info)
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .frame(width: 400, height: 500)
+    }
+
+    private func iconForEnvironment(_ name: String) -> String {
+        switch name {
+        case "python": return "chevron.left.forwardslash.chevron.right"
+        case "node": return "square.fill"
+        case "docker": return "cube.box"
+        case "git": return "arrow.triangle.branch"
+        default: return "questionmark.circle"
+        }
+    }
+}
+
+// MARK: - Python Detail
+
+struct PythonDetailContent: View {
     let info: PythonInfo
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Overview section
-            CheckerSection(title: "Overview") {
-                CheckerRow(label: "Version", value: info.version ?? "Unknown")
-                CheckerRow(label: "Interpreter", value: info.interpreter ?? "CPython")
-                CheckerRow(label: "Path", value: info.path ?? "N/A")
-                CheckerRow(label: "Platform", value: info.platform ?? "N/A")
-                CheckerRow(label: "Site-packages", value: info.sitePackagesPath ?? "N/A")
-                CheckerRow(label: "Pyenv", value: info.pyenvInstalled ? "Yes" : "No")
+            DetailCard(title: "Overview") {
+                DetailRow(label: "Version", value: info.version ?? "Unknown")
+                DetailRow(label: "Interpreter", value: info.interpreter ?? "CPython")
+                DetailCopyRow(label: "Path", value: info.path)
+                DetailRow(label: "Platform", value: info.platform ?? "N/A")
+                DetailCopyRow(label: "Site-packages", value: info.sitePackagesPath)
+
                 if info.pyenvInstalled {
-                    CheckerRow(label: "Pyenv Global", value: info.pyenvCurrent ?? "N/A")
-                    CheckerRow(label: "Pyenv Versions", value: "\(info.pyenvVersions.count) installed")
+                    Divider()
+                    DetailRow(label: "Pyenv", value: "Installed")
+                    DetailRow(label: "Pyenv Global", value: info.pyenvCurrent ?? "N/A")
+                    if !info.pyenvVersions.isEmpty {
+                        DetailRow(label: "Pyenv Versions", value: "\(info.pyenvVersions.count) installed")
+                    }
                 }
             }
 
-            // Virtual Environments section
-            CheckerSection(title: "Virtual Environments") {
+            DetailCard(title: "Virtual Environments", count: info.virtualenvs.count) {
                 if info.virtualenvs.isEmpty {
-                    Text("No virtual environments found.")
-                        .foregroundColor(.secondary)
+                    Text("No virtual environments found")
                         .font(.caption)
+                        .foregroundStyle(.tertiary)
                 } else {
-                    VStack(spacing: 4) {
-                        ForEach(info.virtualenvs) { venv in
+                    ForEach(info.virtualenvs) { venv in
+                        VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Text(venv.name)
-                                    .font(.subheadline)
-                                Text(venv.pythonVersion)
-                                    .foregroundColor(.secondary)
-                                    .font(.caption)
+                                    .font(.subheadline.weight(.medium))
                                 Spacer()
-                                Text(venv.path)
-                                    .foregroundStyle(.tertiary)
-                                    .font(.caption2)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                                Text(venv.pythonVersion)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
+                            Text(venv.path)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                        .padding(.vertical, 4)
+                        if venv.id != info.virtualenvs.last?.id {
+                            Divider()
                         }
                     }
                 }
             }
 
-            // Actions section
-            CheckerSection(title: "Actions") {
-                VStack(alignment: .leading, spacing: 6) {
-                    ActionRow(number: 1, description: "List all detected virtual environments", command: "list_venvs")
-                    ActionRow(number: 2, description: "List installed pip packages", command: "list_pip")
-                    ActionRow(number: 3, description: "Check for outdated pip packages", command: "pip_outdated")
-                    ActionRow(number: 4, description: "Show site-packages directory", command: "site_packages")
-                }
+            DetailCard(title: "Actions") {
+                ActionList(actions: [
+                    ActionItem(description: "List all virtual environments", command: "list_venvs"),
+                    ActionItem(description: "List installed pip packages", command: "pip_list"),
+                    ActionItem(description: "Check outdated packages", command: "pip_outdated"),
+                    ActionItem(description: "Show site-packages path", command: "site_packages")
+                ])
             }
         }
     }
 }
 
-// MARK: - Node Content (matches CLI: Overview + Actions)
+// MARK: - Node Detail
 
-struct NodeCheckerContent: View {
+struct NodeDetailContent: View {
     let info: NodeInfo
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Overview section
-            CheckerSection(title: "Overview") {
-                CheckerRow(label: "Version", value: info.version ?? "Unknown")
-                CheckerRow(label: "Path", value: info.path ?? "N/A")
-                CheckerRow(label: "npm Version", value: info.npmVersion ?? "N/A")
+            DetailCard(title: "Overview") {
+                DetailRow(label: "Version", value: info.version ?? "Unknown")
+                DetailCopyRow(label: "Path", value: info.path)
+                DetailRow(label: "npm Version", value: info.npmVersion ?? "N/A")
             }
 
-            // Version Managers section
             if info.nvmInstalled || info.fnmInstalled || info.voltaInstalled {
-                VersionManagersSection(info: info)
-            }
-
-            // Actions section
-            CheckerSection(title: "Actions") {
-                VStack(alignment: .leading, spacing: 6) {
-                    ActionRow(number: 1, description: "List globally installed npm packages", command: "list_global")
-                    ActionRow(number: 2, description: "Check for outdated global packages", command: "npm_outdated")
-                    ActionRow(number: 3, description: "Show Node.js binary path", command: "node_path")
-                    ActionRow(number: 4, description: "Show global npm modules directory", command: "npm_prefix")
+                DetailCard(title: "Version Managers") {
+                    if info.nvmInstalled {
+                        DetailRow(label: "nvm", value: info.nvmCurrent ?? "installed")
+                    }
+                    if info.fnmInstalled {
+                        DetailRow(label: "fnm", value: "installed")
+                    }
+                    if info.voltaInstalled {
+                        DetailRow(label: "volta", value: "installed")
+                    }
                 }
             }
+
+            DetailCard(title: "Actions") {
+                ActionList(actions: [
+                    ActionItem(description: "List global npm packages", command: "npm_list"),
+                    ActionItem(description: "Check outdated packages", command: "npm_outdated"),
+                    ActionItem(description: "Show Node path", command: "node_path"),
+                    ActionItem(description: "Show npm prefix", command: "npm_prefix")
+                ])
+            }
         }
     }
 }
 
-struct VersionManagersSection: View {
-    let info: NodeInfo
+// MARK: - Docker Detail
 
-    var body: some View {
-        CheckerSection(title: "Version Managers") {
-            CheckerRow(label: "Installed", value: versionManagersText)
-        }
-    }
-
-    private var versionManagersText: String {
-        var managers: [String] = []
-        if info.nvmInstalled {
-            managers.append("nvm (current: \(info.nvmCurrent ?? "N/A"))")
-        }
-        if info.fnmInstalled {
-            managers.append("fnm")
-        }
-        if info.voltaInstalled {
-            managers.append("volta")
-        }
-        return managers.joined(separator: ", ")
-    }
-}
-
-// MARK: - Docker Content (matches CLI: Overview + Containers + Images + Actions)
-
-struct DockerCheckerContent: View {
+struct DockerDetailContent: View {
     let info: DockerInfo
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Overview section
-            CheckerSection(title: "Overview") {
-                CheckerRow(label: "Version", value: info.version ?? "Unknown")
-                CheckerRow(label: "Daemon", value: info.daemonRunning ? "Running" : "Stopped")
-                CheckerRow(label: "Context", value: info.contextName ?? "default")
-                if let composeVersion = info.composeVersion {
-                    CheckerRow(label: "Docker Compose", value: composeVersion)
+            DetailCard(title: "Overview") {
+                DetailRow(label: "Version", value: info.version ?? "Unknown")
+                HStack {
+                    Text("Daemon")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 80, alignment: .leading)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(info.daemonRunning ? Color.green : Color.red)
+                            .frame(width: 6, height: 6)
+                        Text(info.daemonRunning ? "Running" : "Stopped")
+                            .font(.subheadline)
+                    }
+                }
+                DetailRow(label: "Context", value: info.contextName ?? "default")
+                if let compose = info.composeVersion {
+                    DetailRow(label: "Compose", value: compose)
                 }
             }
 
-            // Containers section
-            CheckerSection(title: "Containers") {
+            DetailCard(title: "Containers", count: info.containers.count) {
                 if info.containers.isEmpty {
-                    Text("No containers found.")
-                        .foregroundColor(.secondary)
+                    Text("No containers")
                         .font(.caption)
+                        .foregroundStyle(.tertiary)
                 } else {
-                    VStack(spacing: 4) {
-                        ForEach(info.containers) { container in
-                            HStack {
-                                Text(container.name)
-                                    .font(.subheadline)
-                                    .lineLimit(1)
-                                Text(container.image)
-                                    .foregroundColor(.secondary)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text(container.status)
-                                    .foregroundColor(container.status.contains("running") ? .green : .secondary)
-                                    .font(.caption)
+                    let running = info.containers.filter { $0.status.contains("running") }.count
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Progress bar
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color(nsColor: .controlBackgroundColor))
+                                if !info.containers.isEmpty {
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(Color.accentColor)
+                                        .frame(width: geo.size.width * CGFloat(running) / CGFloat(info.containers.count))
+                                }
                             }
                         }
+                        .frame(height: 4)
+                        Text("\(running)/\(info.containers.count) running")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
+                    ForEach(info.containers.prefix(6)) { container in
+                        HStack {
+                            Circle()
+                                .fill(container.status.contains("running") ? Color.green : Color.gray)
+                                .frame(width: 6, height: 6)
+                            Text(container.name)
+                                .font(.caption)
+                                .lineLimit(1)
+                            Text(container.image)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Spacer()
+                        }
+                    }
+                    if info.containers.count > 6 {
+                        Text("+\(info.containers.count - 6) more")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
 
-            // Images section
-            CheckerSection(title: "Images") {
+            DetailCard(title: "Images", count: info.images.count) {
                 if info.images.isEmpty {
-                    Text("No images found.")
-                        .foregroundColor(.secondary)
+                    Text("No images")
                         .font(.caption)
+                        .foregroundStyle(.tertiary)
                 } else {
-                    VStack(spacing: 4) {
-                        ForEach(info.images) { image in
-                            HStack {
-                                Text(image.repository)
-                                    .font(.subheadline)
-                                    .lineLimit(1)
-                                Text(image.tag)
-                                    .foregroundColor(.secondary)
-                                    .font(.caption)
-                                Text(image.size)
-                                    .foregroundStyle(.tertiary)
-                                    .font(.caption2)
-                                Spacer()
-                            }
+                    ForEach(info.images.prefix(6)) { image in
+                        HStack {
+                            Text(image.repository)
+                                .font(.caption)
+                                .lineLimit(1)
+                            Text(":\(image.tag)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(image.size)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
+                    }
+                    if info.images.count > 6 {
+                        Text("+\(info.images.count - 6) more")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
 
-            // Actions section
-            CheckerSection(title: "Actions") {
-                VStack(alignment: .leading, spacing: 6) {
-                    ActionRow(number: 1, description: "List all containers (running and stopped)", command: "list_containers")
-                    ActionRow(number: 2, description: "List all Docker images", command: "list_images")
-                    ActionRow(number: 3, description: "Show Docker disk usage breakdown", command: "disk_usage")
-                    ActionRow(number: 4, description: "Remove all dangling images", command: "prune_images", dangerous: true)
-                    ActionRow(number: 5, description: "Remove all unused volumes", command: "prune_volumes", dangerous: true)
-                    ActionRow(number: 6, description: "Remove all unused containers, networks, and dangling images", command: "prune_all", dangerous: true)
-                }
+            DetailCard(title: "Actions") {
+                ActionList(actions: [
+                    ActionItem(description: "List all containers", command: "docker_ps"),
+                    ActionItem(description: "List all images", command: "docker_images"),
+                    ActionItem(description: "Show disk usage", command: "docker_df"),
+                    ActionItem(description: "Prune dangling images", command: "docker_prune_images", dangerous: true),
+                    ActionItem(description: "Prune unused volumes", command: "docker_prune_volumes", dangerous: true)
+                ])
             }
         }
     }
 }
 
-// MARK: - Git Content (matches CLI: Identity + Repository + Actions)
+// MARK: - Git Detail
 
-struct GitCheckerContent: View {
+struct GitDetailContent: View {
     let info: GitInfo
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Identity section
-            CheckerSection(title: "Identity") {
-                CheckerRow(label: "Version", value: info.version ?? "Unknown")
-                CheckerRow(label: "Path", value: info.path ?? "N/A")
-                CheckerRow(label: "User Name", value: info.userName ?? "Not configured", highlightMissing: info.userName == nil)
-                CheckerRow(label: "User Email", value: info.userEmail ?? "Not configured", highlightMissing: info.userEmail == nil)
-                CheckerRow(label: "Signing Key", value: info.signingKey ?? "None")
-                CheckerRow(label: "Default Branch", value: info.defaultBranch ?? "main")
-                CheckerRow(label: "GitHub CLI", value: info.ghInstalled ? "Installed" : "Not installed")
+            DetailCard(title: "Identity") {
+                DetailRow(label: "Version", value: info.version ?? "Unknown")
+                DetailCopyRow(label: "Path", value: info.path)
+                DetailRow(label: "User Name", value: info.userName ?? "Not configured", highlightMissing: info.userName == nil)
+                DetailRow(label: "User Email", value: info.userEmail ?? "Not configured", highlightMissing: info.userEmail == nil)
+                DetailRow(label: "Signing Key", value: info.signingKey ?? "None")
+                DetailRow(label: "Default Branch", value: info.defaultBranch ?? "main")
+
                 if info.ghInstalled {
+                    Divider()
+                    DetailRow(label: "GitHub CLI", value: "Installed")
                     if let ghVersion = info.ghVersion {
-                        CheckerRow(label: "gh Version", value: ghVersion)
+                        DetailRow(label: "gh Version", value: ghVersion)
                     }
-                    CheckerRow(label: "gh Auth", value: info.ghAuthStatus ?? "N/A")
+                    HStack {
+                        Text("gh Auth")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 80, alignment: .leading)
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(info.ghAuthStatus == "logged_in" ? Color.green : Color.orange)
+                                .frame(width: 6, height: 6)
+                            Text(info.ghAuthStatus == "logged_in" ? "Logged In" : "Not Logged In")
+                                .font(.subheadline)
+                        }
+                    }
                     if let ghUser = info.ghUser {
-                        CheckerRow(label: "gh User", value: ghUser)
+                        DetailRow(label: "gh User", value: ghUser)
                     }
                 }
             }
 
-            // Repository section
-            CheckerSection(title: "Repository") {
+            DetailCard(title: "Repository") {
                 if info.currentRepo == nil {
-                    Text("Not inside a git repository.")
-                        .foregroundColor(.secondary)
+                    Text("Not inside a git repository")
                         .font(.caption)
+                        .foregroundStyle(.tertiary)
                 } else {
-                    CheckerRow(label: "Repository", value: info.currentRepo ?? "N/A")
-                    CheckerRow(label: "Branch", value: info.currentBranch ?? "unknown")
+                    DetailCopyRow(label: "Path", value: info.currentRepo)
+                    DetailRow(label: "Branch", value: info.currentBranch ?? "unknown")
+
                     if !info.remotes.isEmpty {
-                        VStack(spacing: 4) {
-                            ForEach(info.remotes) { remote in
-                                HStack {
-                                    Text(remote.name)
-                                        .font(.subheadline)
-                                    Spacer()
-                                    Text(remote.url)
-                                        .foregroundColor(.secondary)
-                                        .font(.caption)
-                                        .lineLimit(1)
-                                }
-                            }
+                        Divider()
+                        ForEach(info.remotes) { remote in
+                            DetailCopyRow(label: remote.name, value: remote.url)
                         }
                     }
                 }
             }
 
-            // Actions section
-            CheckerSection(title: "Actions") {
-                VStack(alignment: .leading, spacing: 6) {
-                    ActionRow(number: 1, description: "Show configured git user identity", command: "show_identity")
-                    ActionRow(number: 2, description: "Open git global config in $EDITOR", command: "edit_config")
+            DetailCard(title: "Actions") {
+                var actions: [ActionItem] {
+                    var items = [
+                        ActionItem(description: "Show git identity", command: "git_identity"),
+                        ActionItem(description: "Open git config", command: "git_config"),
+                        ActionItem(description: "Show current branch", command: "git_branch"),
+                        ActionItem(description: "List remotes", command: "git_remotes")
+                    ]
                     if info.ghInstalled {
-                        ActionRow(number: 3, description: "Show GitHub CLI authentication status", command: "gh_status")
-                        if info.ghAuthStatus != "logged_in" {
-                            ActionRow(number: 4, description: "Run GitHub CLI authentication flow", command: "gh_auth")
-                        }
+                        items.insert(ActionItem(description: "GitHub auth status", command: "gh_status"), at: 2)
                     }
-                    ActionRow(number: 5, description: "Show current git branch", command: "current_branch")
-                    ActionRow(number: 6, description: "List git remote repositories", command: "show_remotes")
+                    return items
                 }
+
+                ActionList(actions: actions)
             }
         }
     }
 }
 
-// MARK: - General Content
+// MARK: - General Detail
 
-struct GeneralCheckerContent: View {
+struct GeneralDetailContent: View {
     let info: any EnvironmentInfo
 
     var body: some View {
-        CheckerSection(title: "Details") {
-            CheckerRow(label: "Version", value: info.version ?? "Unknown")
-            CheckerRow(label: "Path", value: info.path ?? "N/A")
+        DetailCard(title: "Details") {
+            DetailRow(label: "Version", value: info.version ?? "Unknown")
+            DetailCopyRow(label: "Path", value: info.path)
+
             if !info.errors.isEmpty {
+                Divider()
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Warnings")
-                        .foregroundColor(.secondary)
                         .font(.caption)
+                        .foregroundStyle(.orange)
                     ForEach(info.errors, id: \.self) { error in
                         Text(error)
-                            .foregroundColor(.orange)
-                            .font(.caption)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -403,23 +634,42 @@ struct GeneralCheckerContent: View {
     }
 }
 
-// MARK: - Helper Components
+// MARK: - Components
 
-struct CheckerSection<Content: View>: View {
+struct DetailCard<Content: View>: View {
     let title: String
+    var count: Int? = nil
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.headline)
-                .foregroundColor(.primary)
-            content()
+            HStack {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                if let count = count {
+                    Text("(\(count))")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                content()
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+            )
         }
     }
 }
 
-struct CheckerRow: View {
+struct DetailRow: View {
     let label: String
     let value: String
     var highlightMissing: Bool = false
@@ -427,39 +677,96 @@ struct CheckerRow: View {
     var body: some View {
         HStack {
             Text(label)
-                .foregroundColor(.secondary)
                 .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 80, alignment: .leading)
             Spacer()
             Text(value)
                 .font(.subheadline)
-                .foregroundColor(highlightMissing ? .orange : .primary)
+                .foregroundStyle(highlightMissing ? .orange : .primary)
         }
     }
 }
 
-struct ActionRow: View {
-    let number: Int
+struct DetailCopyRow: View {
+    let label: String
+    let value: String?
+    @State private var copied = false
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 80, alignment: .leading)
+            Spacer()
+            if let value = value, !value.isEmpty {
+                Text(value)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(value, forType: .string)
+                    withAnimation { copied = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        withAnimation { copied = false }
+                    }
+                }) {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 10))
+                        .foregroundStyle(copied ? .green : .secondary)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text("N/A")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+}
+
+struct ActionItem {
     let description: String
     let command: String
     var dangerous: Bool = false
+}
+
+struct ActionList: View {
+    let actions: [ActionItem]
 
     var body: some View {
-        HStack(alignment: .top, spacing: 4) {
-            Text("\(number).")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            if dangerous {
-                Text("!")
-                    .font(.caption)
-                    .foregroundColor(.yellow)
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(actions, id: \.command) { action in
+                HStack(spacing: 4) {
+                    if action.dangerous {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.orange)
+                    }
+                    Text(action.description)
+                        .font(.caption)
+                    Spacer()
+                    Text(action.command)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(description)
-                    .font(.caption)
-                Text(command)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
+        }
+    }
+}
+
+// MARK: - Health Status Extension
+
+extension HealthStatus {
+    var dotColor: Color {
+        switch self {
+        case .healthy: .green
+        case .warning: .orange
+        case .error: .red
+        case .notFound: .gray
+        case .unknown: .gray
         }
     }
 }
