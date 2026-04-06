@@ -44,7 +44,11 @@ struct PopoverView: View {
             Divider()
 
             // Content
-            if service.isRefreshing && service.environments.isEmpty {
+            if let env = selectedEnvironment, showDetail {
+                CheckerDetailView(info: env, onBack: {
+                    showDetail = false
+                })
+            } else if service.isRefreshing && service.environments.isEmpty {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if service.environments.isEmpty {
@@ -76,13 +80,7 @@ struct PopoverView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
         }
-        .frame(width: 360, height: 420)
-        .sheet(isPresented: $showDetail) {
-            if let env = selectedEnvironment {
-                CheckerDetailView(info: env)
-                    .environmentObject(service)
-            }
-        }
+        .frame(width: showDetail ? 400 : 360, height: showDetail ? 500 : 420)
     }
 }
 
@@ -233,14 +231,14 @@ struct EnvironmentRow: View {
 
 struct CheckerDetailView: View {
     let info: any EnvironmentInfo
+    let onBack: () -> Void
     @EnvironmentObject var service: EnvironmentService
-    @Environment(\.dismiss) var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
             // Header
             HStack(spacing: 12) {
-                Button(action: { dismiss() }) {
+                Button(action: onBack) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .medium))
                 }
